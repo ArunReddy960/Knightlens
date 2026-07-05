@@ -1,9 +1,10 @@
 package com.chessdna.chessdnaanalyzer;
 
 import org.springframework.web.bind.annotation.*;
-import chesspresso.game.Game;
 import java.io.IOException;
 import java.util.List;
+import java.util.ArrayList;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api/games")
@@ -11,10 +12,21 @@ public class AnalysisController {
 
     private final ChessPlatformService chessPlatformService;
     private final StockfishService stockfishService;
+    private final PatternAnalysisService patternAnalysisService;
+    private final AnalysisJobService analysisJobService;
+    private final AnalysisJobRepository jobRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public AnalysisController(LichessService lichessService, StockfishService stockfishService) {
+    public AnalysisController(LichessService lichessService,
+                              StockfishService stockfishService,
+                              PatternAnalysisService patternAnalysisService,
+                              AnalysisJobService analysisJobService,
+                              AnalysisJobRepository jobRepository) {
         this.chessPlatformService = lichessService;
         this.stockfishService = stockfishService;
+        this.patternAnalysisService = patternAnalysisService;
+        this.analysisJobService = analysisJobService;
+        this.jobRepository = jobRepository;
     }
 
     @GetMapping("/{username}")
@@ -32,7 +44,65 @@ public class AnalysisController {
     }
 
     @GetMapping("/bestmove")
-    public String getBestMoveForFen(@RequestParam String fen) throws IOException {
-        return stockfishService.getBestMove(fen);
+    public String getBestMoveForFen(@RequestParam String fen) throws IOException, InterruptedException {
+        StockfishService.AnalysisResult result = stockfishService.analyzePosition(fen);
+        return result.bestMove();
+    }
+
+    @GetMapping("/{username}/analyze")
+    public List<List<StockfishService.AnalyzedMove>> analyzeGames(
+            @PathVariable String username,
+            @RequestParam(defaultValue = "1") int gameCount) throws IOException, InterruptedException {
+
+        List<List<String>> allGamesFens = ((LichessService) chessPlatformService)
+                .fetchGamesAsFens(username, gameCount);
+
+        List<List<StockfishService.AnalyzedMove>> allGamesAnalysis = new ArrayList<>();
+
+        for (List<String> gameFens : allGamesFens) {
+            List<StockfishService.AnalyzedMove> analysis = stockfishService.analyzeGame(gameFens);
+            allGamesAnalysis.add(analysis);
+        }
+
+        return allGamesAnalysis;
+    }
+
+    @GetMapping("/{username}/patterns")
+    public List<PatternAnalysisService.PhaseStats> analyzePatterns(
+            @PathVariable String username,
+            @RequestParam(defaultValue = "5") int gameCount) throws InterruptedException {
+
+        List<List<String>> allGamesFens = ((LichessService) chessPlatformService)
+                .fetchGamesAsFens(username, gameCount);
+
+        List<List<StockfishService.AnalyzedMove>> allGamesAnalysis = new ArrayList<>();
+
+        for (List<String> gameFens : allGamesFens) {
+            List<StockfishService.AnalyzedMove> analysis = stockfishService.analyzeGame(gameFens);
+            allGamesAnalysis.add(analysis);
+        }
+
+        return patternAnalysisService.analyzePatterns(allGamesAnalysis);
+    }
+
+    // ── NEW: Async endpoints ───────────────────────────────────────────
+
+    @PostMapping("/{username}/analyze-async")
+    public AnalysisJob startAnalysis(
+            @PathVariable String username,
+            @RequestParam(defaultValue = "10") int gameCount) {
+        return analysisJobService.startJob(username, gameCount);
+    }
+
+    @GetMapping("/jobs/{jobId}")
+    public String getJobStatus(@PathVariable Long jobId) {
+        AnalysisJob job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new RuntimeException("Job not found: " + jobId));
+
+        if (job.getStatus().equals("COMPLETED")) {
+            return job.getResultJson();
+        }
+
+        return "{\"status\": \"" + job.getStatus() + "\", \"jobId\": " + jobId + "}";
     }
 }
