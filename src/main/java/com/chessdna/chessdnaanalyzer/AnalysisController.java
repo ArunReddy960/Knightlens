@@ -95,14 +95,8 @@ public class AnalysisController {
     }
 
     @GetMapping("/jobs/{jobId}")
-    public String getJobStatus(@PathVariable Long jobId) {
-        AnalysisJob job = jobRepository.findById(jobId)
+    public AnalysisJob getJobStatus(@PathVariable Long jobId) {
+        return jobRepository.findById(jobId)
                 .orElseThrow(() -> new RuntimeException("Job not found: " + jobId));
-
-        if (job.getStatus().equals("COMPLETED")) {
-            return job.getResultJson();
-        }
-
-        return "{\"status\": \"" + job.getStatus() + "\", \"jobId\": " + jobId + "}";
     }
 }

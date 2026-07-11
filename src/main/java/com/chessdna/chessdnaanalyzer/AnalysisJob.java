@@ -13,10 +13,13 @@ public class AnalysisJob {
 
     private String username;
     private int gameCount;
-    private String status; // PENDING, IN_PROGRESS, COMPLETED, FAILED
+    private String status;
 
     @Column(columnDefinition = "TEXT")
-    private String resultJson; // we'll store the final PhaseStats as JSON text
+    private String resultJson;
+
+    @Column(columnDefinition = "TEXT")
+    private String coachingReport;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -32,7 +35,6 @@ public class AnalysisJob {
         updatedAt = LocalDateTime.now();
     }
 
-    // Getters and setters
     public Long getId() { return id; }
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
@@ -42,6 +44,8 @@ public class AnalysisJob {
     public void setStatus(String status) { this.status = status; }
     public String getResultJson() { return resultJson; }
     public void setResultJson(String resultJson) { this.resultJson = resultJson; }
+    public String getCoachingReport() { return coachingReport; }
+    public void setCoachingReport(String coachingReport) { this.coachingReport = coachingReport; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }

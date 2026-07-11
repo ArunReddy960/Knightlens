@@ -2,9 +2,9 @@ package com.chessdna.chessdnaanalyzer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.context.annotation.Lazy;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +16,7 @@ public class AnalysisJobService {
     private final ChessPlatformService chessPlatformService;
     private final StockfishService stockfishService;
     private final PatternAnalysisService patternAnalysisService;
+    private final ClaudeService claudeService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private AnalysisJobService self;
@@ -23,11 +24,13 @@ public class AnalysisJobService {
     public AnalysisJobService(AnalysisJobRepository jobRepository,
                               LichessService lichessService,
                               StockfishService stockfishService,
-                              PatternAnalysisService patternAnalysisService) {
+                              PatternAnalysisService patternAnalysisService,
+                              ClaudeService claudeService) {
         this.jobRepository = jobRepository;
         this.chessPlatformService = lichessService;
         this.stockfishService = stockfishService;
         this.patternAnalysisService = patternAnalysisService;
+        this.claudeService = claudeService;
     }
 
     @Autowired
@@ -68,17 +71,21 @@ public class AnalysisJobService {
             List<PatternAnalysisService.PhaseStats> patterns =
                     patternAnalysisService.analyzePatterns(allGamesAnalysis);
 
+            // ── Claude coaching report ──
+            String coachingReport = claudeService.generateCoachingReport(patterns, username);
+
             String resultJson = objectMapper.writeValueAsString(patterns);
 
             job.setResultJson(resultJson);
+            job.setCoachingReport(coachingReport);
             job.setStatus("COMPLETED");
             jobRepository.save(job);
 
         } catch (Exception e) {
-        job.setStatus("FAILED");
-        jobRepository.save(job);
-        System.err.println("Job " + jobId + " failed with error: " + e.getMessage());
-        e.printStackTrace();
-    }
+            job.setStatus("FAILED");
+            jobRepository.save(job);
+            System.err.println("Job " + jobId + " failed with error: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }
