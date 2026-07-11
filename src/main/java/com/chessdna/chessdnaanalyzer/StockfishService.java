@@ -94,7 +94,7 @@ public class StockfishService {
         return results;
     }
 
-    private int normalizeToWhitePerspective(int evaluation, String fen) {
+    public int normalizeToWhitePerspective(int evaluation, String fen) {
         String turnIndicator = fen.split(" ")[1];
         if (turnIndicator.equals("b")) {
             return -evaluation;
