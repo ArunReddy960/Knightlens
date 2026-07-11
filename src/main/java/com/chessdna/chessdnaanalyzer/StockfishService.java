@@ -39,7 +39,7 @@ public class StockfishService {
     }
 
     public AnalysisResult analyzePosition(String fen) throws IOException, InterruptedException {
-        StockfishEngine engine = enginePool.poll(30, TimeUnit.SECONDS);
+        StockfishEngine engine = enginePool.poll(120, TimeUnit.SECONDS);
         if (engine == null) {
             throw new RuntimeException("No Stockfish engine available — pool timeout");
         }
