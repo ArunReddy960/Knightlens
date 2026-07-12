@@ -45,14 +45,15 @@ public class AnalysisController {
 
     @GetMapping("/bestmove")
     public String getBestMoveForFen(@RequestParam String fen) throws IOException, InterruptedException {
-        StockfishService.AnalysisResult result = stockfishService.analyzePosition(fen);
+        StockfishService.AnalysisResult result = stockfishService.analyzePosition(fen, 18);
         return result.bestMove();
     }
 
     @GetMapping("/{username}/analyze")
     public List<List<StockfishService.AnalyzedMove>> analyzeGames(
             @PathVariable String username,
-            @RequestParam(defaultValue = "1") int gameCount) throws IOException, InterruptedException {
+            @RequestParam(defaultValue = "1") int gameCount,
+            @RequestParam(defaultValue = "18") int depth) throws IOException, InterruptedException {
 
         List<List<String>> allGamesFens = ((LichessService) chessPlatformService)
                 .fetchGamesAsFens(username, gameCount);
@@ -60,7 +61,7 @@ public class AnalysisController {
         List<List<StockfishService.AnalyzedMove>> allGamesAnalysis = new ArrayList<>();
 
         for (List<String> gameFens : allGamesFens) {
-            List<StockfishService.AnalyzedMove> analysis = stockfishService.analyzeGame(gameFens);
+            List<StockfishService.AnalyzedMove> analysis = stockfishService.analyzeGame(gameFens, depth);
             allGamesAnalysis.add(analysis);
         }
 
@@ -70,7 +71,8 @@ public class AnalysisController {
     @GetMapping("/{username}/patterns")
     public List<PatternAnalysisService.PhaseStats> analyzePatterns(
             @PathVariable String username,
-            @RequestParam(defaultValue = "5") int gameCount) throws InterruptedException {
+            @RequestParam(defaultValue = "5") int gameCount,
+            @RequestParam(defaultValue = "18") int depth) throws InterruptedException {
 
         List<List<String>> allGamesFens = ((LichessService) chessPlatformService)
                 .fetchGamesAsFens(username, gameCount);
@@ -78,7 +80,7 @@ public class AnalysisController {
         List<List<StockfishService.AnalyzedMove>> allGamesAnalysis = new ArrayList<>();
 
         for (List<String> gameFens : allGamesFens) {
-            List<StockfishService.AnalyzedMove> analysis = stockfishService.analyzeGame(gameFens);
+            List<StockfishService.AnalyzedMove> analysis = stockfishService.analyzeGame(gameFens, depth);
             allGamesAnalysis.add(analysis);
         }
 
@@ -86,17 +88,24 @@ public class AnalysisController {
     }
 
     // ── NEW: Async endpoints ───────────────────────────────────────────
-
-    @PostMapping("/{username}/analyze-async")
-    public AnalysisJob startAnalysis(
-            @PathVariable String username,
-            @RequestParam(defaultValue = "10") int gameCount) {
-        return analysisJobService.startJob(username, gameCount);
-    }
-
     @GetMapping("/jobs/{jobId}")
     public AnalysisJob getJobStatus(@PathVariable Long jobId) {
         return jobRepository.findById(jobId)
                 .orElseThrow(() -> new RuntimeException("Job not found: " + jobId));
+    }
+
+    // Old endpoint — still calling startJob with old signature
+    @PostMapping("/{username}/analyze-quick")
+    public AnalysisJob quickAnalysis(
+            @PathVariable String username,
+            @RequestParam(defaultValue = "10") int gameCount) {
+        return analysisJobService.startJob(username, gameCount, 12); // depth hardcoded to 12
+    }
+
+    @PostMapping("/{username}/analyze-deep")
+    public AnalysisJob deepAnalysis(
+            @PathVariable String username,
+            @RequestParam(defaultValue = "10") int gameCount) {
+        return analysisJobService.startJob(username, gameCount, 18); // depth hardcoded to 18
     }
 }

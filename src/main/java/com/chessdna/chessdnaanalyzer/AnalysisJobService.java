@@ -38,21 +38,21 @@ public class AnalysisJobService {
         this.self = self;
     }
 
-    public AnalysisJob startJob(String username, int gameCount) {
+    public AnalysisJob startJob(String username, int gameCount, int depth) {
         AnalysisJob job = new AnalysisJob();
         job.setUsername(username);
         job.setGameCount(gameCount);
         job.setStatus("PENDING");
-
+        job.setDepth(depth);
         AnalysisJob savedJob = jobRepository.save(job);
 
-        self.processJobAsync(savedJob.getId(), username, gameCount);
+        self.processJobAsync(savedJob.getId(), username, gameCount, depth);
 
         return savedJob;
     }
 
     @Async
-    public void processJobAsync(Long jobId, String username, int gameCount) {
+    public void processJobAsync(Long jobId, String username, int gameCount,  int depth) {
         AnalysisJob job = jobRepository.findById(jobId).orElseThrow();
 
         try {
@@ -64,7 +64,7 @@ public class AnalysisJobService {
 
             List<List<StockfishService.AnalyzedMove>> allGamesAnalysis = new ArrayList<>();
             for (List<String> gameFens : allGamesFens) {
-                List<StockfishService.AnalyzedMove> analysis = stockfishService.analyzeGame(gameFens);
+                List<StockfishService.AnalyzedMove> analysis = stockfishService.analyzeGame(gameFens, depth);
                 allGamesAnalysis.add(analysis);
             }
 

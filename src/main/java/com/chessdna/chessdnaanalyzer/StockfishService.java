@@ -10,8 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class StockfishService {
@@ -19,7 +19,10 @@ public class StockfishService {
     @Value("${stockfish.path}")
     private String stockfishPath;
 
-    private static final int POOL_SIZE = 4;
+    @Value("${stockfish.depth:18}")
+    private int defaultDepth;
+
+    private static final int POOL_SIZE = 8;
 
     private BlockingQueue<StockfishEngine> enginePool;
 
@@ -38,19 +41,19 @@ public class StockfishService {
         }
     }
 
-    public AnalysisResult analyzePosition(String fen) throws IOException, InterruptedException {
+    public AnalysisResult analyzePosition(String fen, int depth) throws IOException, InterruptedException {
         StockfishEngine engine = enginePool.poll(120, TimeUnit.SECONDS);
         if (engine == null) {
             throw new RuntimeException("No Stockfish engine available — pool timeout");
         }
         try {
-            return engine.analyze(fen);
+            return engine.analyze(fen, depth);
         } finally {
             enginePool.offer(engine);
         }
     }
 
-    public List<AnalyzedMove> analyzeGame(List<String> fens) throws InterruptedException {
+    public List<AnalyzedMove> analyzeGame(List<String> fens, int depth) throws InterruptedException {
 
         // ── PHASE 1: Evaluate ALL positions in PARALLEL ──
         List<CompletableFuture<Integer>> futures = new ArrayList<>();
@@ -64,7 +67,7 @@ public class StockfishService {
         for (String fen : allFens) {
             CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
                 try {
-                    AnalysisResult result = analyzePosition(fen);
+                    AnalysisResult result = analyzePosition(fen, depth);
                     return normalizeToWhitePerspective(result.evaluationCentipawns(), fen);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
@@ -77,7 +80,7 @@ public class StockfishService {
                 .map(CompletableFuture::join)
                 .toList();
 
-        // ── PHASE 2: Calculate differences + classify phase/quality SEQUENTIALLY ──
+        // ── PHASE 2: Calculate differences + classify phase/quality ──
         List<AnalyzedMove> results = new ArrayList<>();
         for (int i = 1; i < allEvaluations.size(); i++) {
             int previousEval = allEvaluations.get(i - 1);
@@ -161,9 +164,9 @@ public class StockfishService {
             waitForResponse("readyok");
         }
 
-        AnalysisResult analyze(String fen) throws IOException {
+        AnalysisResult analyze(String fen, int depth) throws IOException {
             sendCommand("position fen " + fen);
-            sendCommand("go depth 18");
+            sendCommand("go depth " + depth);
 
             String bestMove = null;
             int evaluation = 0;

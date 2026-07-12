@@ -14,6 +14,7 @@ public class AnalysisJob {
     private String username;
     private int gameCount;
     private String status;
+    private int depth;
 
     @Column(columnDefinition = "TEXT")
     private String resultJson;
@@ -40,6 +41,8 @@ public class AnalysisJob {
     public void setUsername(String username) { this.username = username; }
     public int getGameCount() { return gameCount; }
     public void setGameCount(int gameCount) { this.gameCount = gameCount; }
+    public int getDepth() { return depth; }
+    public void setDepth(int depth) { this.depth = depth; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public String getResultJson() { return resultJson; }
