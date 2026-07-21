@@ -22,7 +22,8 @@ public class StockfishService {
     @Value("${stockfish.depth:18}")
     private int defaultDepth;
 
-    private static final int POOL_SIZE = 8;
+    @Value("${stockfish.pool-size:2}")
+    private int POOL_SIZE;
 
     private BlockingQueue<StockfishEngine> enginePool;
 
