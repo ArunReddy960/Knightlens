@@ -71,12 +71,23 @@ public class AnalysisJobService {
             List<PatternAnalysisService.PhaseStats> patterns =
                     patternAnalysisService.analyzePatterns(allGamesAnalysis);
 
-            // ── Claude coaching report ──
-            String coachingReport = claudeService.generateCoachingReport(patterns, username);
+
+            // ── Claude analysis (personality + coaching report) ──
+            String claudeJson = claudeService.generateAnalysis(patterns, username);
+
+// Parse and store personality and report separately
+            com.fasterxml.jackson.databind.JsonNode claudeNode =
+                    objectMapper.readTree(claudeJson);
+
+            String personalityJson = objectMapper.writeValueAsString(
+                    claudeNode.path("personality"));
+            String coachingReport = objectMapper.writeValueAsString(
+                    claudeNode.path("report"));
 
             String resultJson = objectMapper.writeValueAsString(patterns);
 
             job.setResultJson(resultJson);
+            job.setPersonalityJson(personalityJson);
             job.setCoachingReport(coachingReport);
             job.setStatus("COMPLETED");
             jobRepository.save(job);

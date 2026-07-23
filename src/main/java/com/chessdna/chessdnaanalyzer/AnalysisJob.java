@@ -21,6 +21,8 @@ public class AnalysisJob {
 
     @Column(columnDefinition = "TEXT")
     private String coachingReport;
+    @Column(columnDefinition = "TEXT")
+    private String personalityJson;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -51,4 +53,6 @@ public class AnalysisJob {
     public void setCoachingReport(String coachingReport) { this.coachingReport = coachingReport; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public String getPersonalityJson() { return personalityJson; }
+    public void setPersonalityJson(String personalityJson) { this.personalityJson = personalityJson; }
 }

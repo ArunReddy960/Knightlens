@@ -33,7 +33,7 @@ public class ClaudeService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public String generateCoachingReport(List<PatternAnalysisService.PhaseStats> patterns,
+    public String generateAnalysis(List<PatternAnalysisService.PhaseStats> patterns,
                                          String username) {
         String prompt = buildPrompt(patterns, username);
         return callClaude(prompt);
@@ -46,43 +46,62 @@ public class ClaudeService {
         PatternAnalysisService.PhaseStats endgame = findPhase(patterns, "endgame");
 
         return """
-                You are a chess coach writing a personalized improvement report.
-                
-                Player: %s
-                
-                Their statistics across recent games:
-                
-                Opening:
-                - Accuracy: %.1f%%
-                - Average centipawn loss: %.1f
-                - Blunders: %d, Mistakes: %d, Inaccuracies: %d
-                - Total moves analyzed: %d
-                
-                Middlegame:
-                - Accuracy: %.1f%%
-                - Average centipawn loss: %.1f
-                - Blunders: %d, Mistakes: %d, Inaccuracies: %d
-                - Total moves analyzed: %d
-                
-                Endgame:
-                - Accuracy: %.1f%%
-                - Average centipawn loss: %.1f
-                - Blunders: %d, Mistakes: %d, Inaccuracies: %d
-                - Total moves analyzed: %d
-                
-                Write a coaching report with these sections:
-                1. OVERALL ASSESSMENT (2-3 sentences, honest but encouraging)
-                2. BIGGEST STRENGTH (what they do best, with specific reference to the numbers)
-                3. PRIMARY WEAKNESS (their single biggest area to improve)
-                4. ACTION PLAN (3 specific, practical things to work on this week)
-                
-                Rules:
-                - Write like a real coach talking to a real player
-                - Reference the actual numbers naturally, don't just list them
-                - Be specific, not generic ("work on endgames" is too vague)
-                - Keep it under 250 words
-                - Don't start with "I" or "As a chess coach"
-                """.formatted(
+            You are an expert chess coach and psychologist analyzing a player's chess DNA.
+            
+            Player: %s
+            
+            Their statistics across recent games:
+            
+            Opening (first ~15 moves):
+            - Accuracy: %.1f%% | Avg loss per move: %.1f centipawns
+            - Blunders: %d | Mistakes: %d | Inaccuracies: %d | Total moves: %d
+            
+            Middlegame (complex positions):
+            - Accuracy: %.1f%% | Avg loss per move: %.1f centipawns
+            - Blunders: %d | Mistakes: %d | Inaccuracies: %d | Total moves: %d
+            
+            Endgame (simplified positions):
+            - Accuracy: %.1f%% | Avg loss per move: %.1f centipawns
+            - Blunders: %d | Mistakes: %d | Inaccuracies: %d | Total moves: %d
+            
+            Return ONLY a valid JSON object with NO markdown, no backticks, no explanation. Just raw JSON:
+            
+            {
+              "personality": {
+                "archetype": "A creative, memorable chess player title (e.g. The Middlegame Monster)",
+                "tagline": "One punchy sentence capturing their style (e.g. Creates chaos, forgets to finish)",
+                "playStyle": "2-3 words (e.g. Tactical, aggressive)",
+                "strength": "Their biggest strength in plain English, specific to their numbers",
+                "blindSpot": "Their recurring weakness in plain English",
+                "riskLevel": "Low, Medium, High, or Extreme — based on blunder frequency",
+                "similarGM": "Name of a famous GM with a similar playing style",
+                "gmDescription": "One sentence about why this GM is similar and what they were known for"
+              },
+              "report": {
+                "overallAssessment": "2-3 sentences. Plain English. No chess jargon. No numbers. Talk like a real coach to a real person.",
+                "biggestStrength": "2-3 sentences about what they do brilliantly. Specific but jargon-free.",
+                "primaryWeakness": "2-3 sentences about their single biggest problem. Be honest but constructive.",
+                "actionPlan": [
+                  "First specific action — what to do, why it helps, how long to spend",
+                  "Second specific action — practical drill or study method",
+                  "Third specific action — one thing to focus on in their next game"
+                ],
+                "thisWeekFocus": {
+                  "drill": "One specific drill with clear instructions",
+                  "studyThis": "One specific endgame, opening, or pattern to study this week",
+                  "inYourNextGame": "One concrete thing to try in their very next game"
+                }
+              }
+            }
+            
+            Important rules:
+            - Never use centipawn, cp loss, or any technical chess engine terms in the report sections
+            - Write the report like you're talking to a passionate amateur who wants to improve
+            - Be specific — reference their actual patterns, not generic advice
+            - The personality archetype should feel fun and accurate, not generic
+            - The similar GM should genuinely match their pattern
+            - Return ONLY the JSON, nothing else
+            """.formatted(
                 username,
                 opening.accuracyPercentage(), opening.averageCentipawnLoss(),
                 opening.blunderCount(), opening.mistakeCount(), opening.inaccuracyCount(),
@@ -95,6 +114,7 @@ public class ClaudeService {
                 endgame.totalMoves()
         );
     }
+
 
     private PatternAnalysisService.PhaseStats findPhase(
             List<PatternAnalysisService.PhaseStats> patterns, String phaseName) {
