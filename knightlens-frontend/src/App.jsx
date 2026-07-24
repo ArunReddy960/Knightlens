@@ -47,6 +47,7 @@ const VIEWS = {
 export default function App() {
   // ── TOP-LEVEL VIEW STATE ───────────────────────────────────────────────────
   const [view, setView] = useState(VIEWS.FORM);
+  console.log("Current view:", view);
 
   // ── FORM STATE (preserved across retries) ─────────────────────────────────
   const [formValues, setFormValues] = useState({ username: "", gameCount: 10, mode: "quick" });
@@ -60,6 +61,7 @@ export default function App() {
   // ── RESULT STATE ──────────────────────────────────────────────────────────
   const [phases, setPhases] = useState(null);
   const [report, setReport] = useState(null);
+  const [personalityJson, setPersonalityJson] = useState(null);
   const [resultUsername, setResultUsername] = useState("");
   const [resultDepth, setResultDepth] = useState(null);
 
@@ -119,6 +121,7 @@ export default function App() {
           const parsedPhases = parsePhaseStats(data.resultJson);
           setPhases(parsedPhases);
           setReport(data.coachingReport || null);
+          setPersonalityJson(data.personalityJson || null);
           setResultUsername(data.username || formValues.username);
           setResultDepth(data.depth);
           setView(VIEWS.RESULT);
@@ -159,6 +162,7 @@ export default function App() {
     setError(null);
     setPhases(null);
     setReport(null);
+    setPersonalityJson(null);
     setJobId(null);
     setJobStatus(null);
     setElapsed(0);
@@ -201,6 +205,7 @@ export default function App() {
     const parsedPhases = parsePhaseStats(job.resultJson);
     setPhases(parsedPhases);
     setReport(job.coachingReport || null);
+    setPersonalityJson(job.personalityJson || null);
     // IMPORTANT: use the job's own username/depth, not current form state
     setResultUsername(job.username || "Player");
     setResultDepth(job.depth);
@@ -281,13 +286,14 @@ export default function App() {
 
         {/* RESULT VIEW */}
         {view === VIEWS.RESULT && (
-          <ResultsDashboard
-            username={resultUsername}
-            phases={phases}
-            report={report}
-            depth={resultDepth}
-            onNewAnalysis={() => setView(VIEWS.FORM)}
-          />
+            <ResultsDashboard
+                username={resultUsername}
+                phases={phases}
+                report={report}
+                personalityJson={personalityJson}
+                depth={resultDepth}
+                onNewAnalysis={() => setView(VIEWS.FORM)}
+            />
         )}
 
       </main>

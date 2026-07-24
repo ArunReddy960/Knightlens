@@ -1,23 +1,32 @@
-// src/components/AnalysisProgress.jsx
-//
-// Shows while a job is PENDING or IN_PROGRESS.
-// WHY NO FAKE PROGRESS?
-// The backend doesn't return per-stage progress data.
-// Faking it (e.g., "moving through stages based on time") is dishonest —
-// it shows the user information the system doesn't actually know.
-// Instead, we show an indeterminate state — "in progress, we don't know exactly where" —
-// which is honest and still informative.
-//
-// PROPS:
-//   username   — string, for display
-//   mode       — "quick" | "deep"
-//   depth      — number (12 or 18)
-//   gameCount  — number
-//   jobId      — number
-//   status     — "PENDING" | "IN_PROGRESS"
-//   elapsed    — number, seconds elapsed since job started
-
+import { useState, useEffect } from "react";
 import Badge from "./Badge";
+
+// ── Chess fun facts — rotates every 5 seconds ──────────────────────────────
+const FUN_FACTS = [
+  "♟ Did you know? There are more possible chess games than atoms in the observable universe.",
+  "♞ Did you know? The word 'checkmate' comes from the Persian phrase 'Shah Mat' — the king is dead.",
+  "♝ Did you know? The longest chess game theoretically possible is 5,949 moves.",
+  "♜ Did you know? Magnus Carlsen became a Grandmaster at just 13 years old.",
+  "♛ Did you know? The first chess computer program was written in 1951 by Alan Turing.",
+  "♟ Did you know? In 1997, Deep Blue became the first computer to defeat a reigning world champion.",
+  "♞ Did you know? The number of possible unique chess positions is 10^120 — known as the Shannon Number.",
+  "♝ Did you know? Stockfish, the engine powering this analysis, is open-source and free for everyone.",
+  "♜ Did you know? The queen became the most powerful piece after a rule change around 1475.",
+  "♛ Did you know? Bobby Fischer could reportedly recall every game he ever played.",
+  "♟ Did you know? The folding chess board was invented by a priest to hide it from authorities in 1125.",
+  "♞ Did you know? Anatoly Karpov played 144 games in a single world championship match in 1984.",
+];
+
+// ── What's happening at each stage ─────────────────────────────────────────
+const STAGES = [
+  { after: 0,  label: "Fetching your games from Lichess..." },
+  { after: 5,  label: "Converting moves to board positions..." },
+  { after: 12, label: "Stockfish is evaluating every move..." },
+  { after: 40, label: "Classifying moves by game phase..." },
+  { after: 55, label: "Identifying your patterns across games..." },
+  { after: 70, label: "Claude is writing your coaching report..." },
+  { after: 90, label: "Almost there — finalizing your Chess DNA..." },
+];
 
 const STATUS_COLORS = {
   PENDING: "neutral",
@@ -26,102 +35,200 @@ const STATUS_COLORS = {
   FAILED: "red",
 };
 
-export default function AnalysisProgress({ username, mode, depth, gameCount, jobId, status, elapsed }) {
-  const isActive = status === "IN_PROGRESS";
+// ── Chess pieces for the animated board ────────────────────────────────────
+const PIECES = ["♔", "♕", "♖", "♗", "♘", "♙", "♚", "♛", "♜", "♝", "♞", "♟"];
+
+export default function AnalysisProgress({
+                                           username, mode, depth, gameCount, jobId, status, elapsed,
+                                         }) {
+  const [factIndex, setFactIndex] = useState(0);
+  const [fadeIn, setFadeIn] = useState(true);
+
+  // Rotate fun facts every 5 seconds with fade transition
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFadeIn(false);
+      setTimeout(() => {
+        setFactIndex((i) => (i + 1) % FUN_FACTS.length);
+        setFadeIn(true);
+      }, 400);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isActive  = status === "IN_PROGRESS";
   const isPending = status === "PENDING";
 
-  const statusLabel = isPending
-    ? "Waiting to start..."
-    : isActive
-    ? "Analysis in progress"
-    : status;
+  // Pick the right stage label based on elapsed seconds
+  const currentStage = [...STAGES]
+      .reverse()
+      .find((s) => elapsed >= s.after) || STAGES[0];
 
   const elapsedDisplay = elapsed > 0
-    ? elapsed >= 60
-      ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s elapsed`
-      : `${elapsed}s elapsed`
-    : null;
+      ? elapsed >= 60
+          ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`
+          : `${elapsed}s`
+      : null;
 
   return (
-    <div style={{
-      background: "#161b22",
-      border: "1px solid #21262d",
-      borderRadius: 12,
-      padding: 28,
-      marginBottom: 24,
-    }}>
-      {/* Header */}
-      <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3", marginBottom: 4 }}>
-        Analyzing {username}
-      </div>
-
-      {/* Job metadata badges */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
-        <Badge variant={mode === "quick" ? "neutral" : "blue"}>
-          {mode === "quick" ? "Quick" : "Deep"}
-        </Badge>
-        <Badge variant="neutral">depth {depth}</Badge>
-        <Badge variant="neutral">{gameCount} games</Badge>
-        <Badge variant={STATUS_COLORS[status] || "neutral"}>{status}</Badge>
-      </div>
-
-      {/* INDETERMINATE PROGRESS BAR
-       * WHY INDETERMINATE?
-       * We don't know the real % complete — the backend doesn't expose it.
-       * An indeterminate bar (pulsing animation) honestly represents
-       * "something is happening, we don't know how far along" —
-       * which is exactly the truth. Faking a % would be misleading.
-       */}
       <div style={{
-        height: 6,
-        borderRadius: 3,
-        background: "#21262d",
-        overflow: "hidden",
-        marginBottom: 12,
+        background: "linear-gradient(135deg, #0d1117 0%, #161b22 100%)",
+        border: "1px solid #30363d",
+        borderRadius: 16,
+        padding: 36,
+        maxWidth: 600,
+        margin: "0 auto",
       }}>
-        {isActive && (
+
+        {/* ── Animated chess board ─────────────────────────────────────────── */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(8, 1fr)",
+          gap: 2,
+          marginBottom: 32,
+          borderRadius: 8,
+          overflow: "hidden",
+          border: "1px solid #21262d",
+          opacity: 0.6,
+        }}>
+          {Array.from({ length: 64 }, (_, i) => {
+            const row = Math.floor(i / 8);
+            const col = i % 8;
+            const isLight = (row + col) % 2 === 0;
+            // Randomly place a few pieces
+            const hasPiece = [4, 11, 19, 27, 36, 44, 52, 59].includes(i);
+            const piece = hasPiece ? PIECES[i % PIECES.length] : null;
+
+            return (
+                <div
+                    key={i}
+                    style={{
+                      width: "100%",
+                      paddingBottom: "100%",
+                      position: "relative",
+                      background: isLight ? "#2d2417" : "#1a1408",
+                    }}
+                >
+                  {piece && (
+                      <div style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 14,
+                        color: i % 16 < 8 ? "#c9a84c" : "#e8e0cc",
+                        animation: `chessPulse ${1.5 + (i % 3) * 0.5}s ease-in-out infinite`,
+                        animationDelay: `${(i % 5) * 0.3}s`,
+                      }}>
+                        {piece}
+                      </div>
+                  )}
+                </div>
+            );
+          })}
+        </div>
+
+        {/* ── Header ───────────────────────────────────────────────────────── */}
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#e8e0cc", marginBottom: 8 }}>
+            Analyzing {username}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+            <Badge variant={mode === "quick" ? "neutral" : "blue"}>
+              {mode === "quick" ? "⚡ Quick" : "🔬 Deep"}
+            </Badge>
+            <Badge variant="neutral">depth {depth}</Badge>
+            <Badge variant="neutral">{gameCount} games</Badge>
+            <Badge variant={STATUS_COLORS[status] || "neutral"}>{status}</Badge>
+          </div>
+        </div>
+
+        {/* ── Progress bar ─────────────────────────────────────────────────── */}
+        <div style={{
+          height: 4,
+          borderRadius: 2,
+          background: "#21262d",
+          overflow: "hidden",
+          marginBottom: 12,
+        }}>
+          {isActive && (
+              <div style={{
+                height: "100%",
+                width: "40%",
+                background: "linear-gradient(90deg, transparent, #c9a84c, transparent)",
+                borderRadius: 2,
+                animation: "indeterminate 1.8s ease-in-out infinite",
+              }} />
+          )}
+          {isPending && (
+              <div style={{ height: "100%", width: "8%", background: "#30363d", borderRadius: 2 }} />
+          )}
+        </div>
+
+        {/* ── Current stage ────────────────────────────────────────────────── */}
+        <div style={{
+          fontSize: 13,
+          color: "#c9a84c",
+          textAlign: "center",
+          marginBottom: 28,
+          minHeight: 20,
+          fontStyle: "italic",
+        }}>
+          {isActive ? currentStage.label : isPending ? "Waiting to start..." : status}
+          {elapsedDisplay && (
+              <span style={{ color: "#8b949e", marginLeft: 8 }}>({elapsedDisplay})</span>
+          )}
+        </div>
+
+        {/* ── Fun fact card ─────────────────────────────────────────────────── */}
+        <div style={{
+          background: "#0d1117",
+          border: "1px solid #21262d",
+          borderRadius: 10,
+          padding: "16px 20px",
+          transition: "opacity 0.4s ease",
+          opacity: fadeIn ? 1 : 0,
+        }}>
           <div style={{
-            height: "100%",
-            width: "40%",
-            background: "linear-gradient(90deg, transparent, #58a6ff, transparent)",
-            borderRadius: 3,
-            animation: "indeterminate 1.5s ease-in-out infinite",
-          }} />
-        )}
-        {isPending && (
+            fontSize: 10,
+            letterSpacing: "0.15em",
+            textTransform: "uppercase",
+            color: "#c9a84c",
+            marginBottom: 8,
+            fontWeight: 600,
+          }}>
+            While you wait
+          </div>
           <div style={{
-            height: "100%",
-            width: "8%",
-            background: "#8b949e",
-            borderRadius: 3,
-          }} />
-        )}
-      </div>
+            fontSize: 13,
+            color: "#8b949e",
+            lineHeight: 1.7,
+          }}>
+            {FUN_FACTS[factIndex]}
+          </div>
+        </div>
 
-      {/* Status message */}
-      <div
-        role="status"
-        aria-live="polite"
-        style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#8b949e", marginBottom: 16 }}
-      >
-        {isActive && <span className="spinner" aria-hidden="true" />}
-        <span>{statusLabel}</span>
-      </div>
+        {/* ── Footer ───────────────────────────────────────────────────────── */}
+        <div style={{
+          fontSize: 11,
+          color: "#484f58",
+          textAlign: "center",
+          marginTop: 20,
+        }}>
+          Job #{jobId} · Polling every 5 seconds
+        </div>
 
-      {/* Footer: job ID + elapsed */}
-      <div style={{ fontSize: 11, color: "#8b949e", display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <span>Job #{jobId}</span>
-        <span>Polling every 5 seconds</span>
-        {elapsedDisplay && <span>{elapsedDisplay}</span>}
-      </div>
-
-      {/* Indeterminate animation keyframe — inline since it's specific to this component */}
-      <style>{`
+        <style>{`
         @keyframes indeterminate {
           0%   { transform: translateX(-200%); }
           100% { transform: translateX(350%); }
         }
+        @keyframes chessPulse {
+          0%, 100% { opacity: 0.4; transform: scale(0.9); }
+          50%       { opacity: 1;   transform: scale(1.1); }
+        }
       `}</style>
-    </div>
+      </div>
   );
 }
