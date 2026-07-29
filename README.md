@@ -1,28 +1,88 @@
-# Chess DNA Analyzer
+# KnightLens — Chess Performance Intelligence
 
-A backend system that analyzes a chess player's game history and generates a personalized **"Chess DNA" report** — identifying recurring weaknesses across opening, middlegame, and endgame phases using real engine analysis.
+> Decode your chess DNA. Find exactly where your games slip away.
 
-Built to solve a real gap: existing tools explain individual moves, but none model the *player* across many games. This system does.
+**Live Demo:** [knightlens.vercel.app](https://knightlens.vercel.app)  
+**GitHub:** [github.com/ArunReddy960/knightlens](https://github.com/ArunReddy960/knightlens)
 
 ---
 
-## Architecture
+![KnightLens Demo](https://i.imgur.com/placeholder.png)
+
+---
+
+## What It Does
+
+KnightLens fetches a player's recent games from Lichess, runs every move through a Stockfish engine pool in parallel, classifies mistakes by game phase, and generates a personalized **Chess DNA report** — including a player archetype, GM comparison, and AI coaching report.
+
+Most chess tools explain individual moves. KnightLens models the **player** — aggregating patterns across 10–20 games to answer: *where do you consistently lose advantage?*
+
+---
+
+## Full Stack Architecture
 
 ```
-Lichess Public API
-      ↓
-LichessService         → fetches PGN game history for any username
-      ↓
-Chesspresso             → parses PGN into per-move FEN positions
-      ↓
-StockfishService        → parallel engine analysis via process pool
-  (4 Stockfish engines, CompletableFuture, BlockingQueue)
-      ↓
-PatternAnalysisService  → aggregates centipawn loss across phases
-      ↓
-PostgreSQL              → async job tracking and result persistence
-      ↓
-REST API                → Spring Boot endpoints, async job pattern
+Browser (React + Vite)
+        ↓  POST /api/games/{username}/analyze-quick
+        ↓  GET  /api/games/jobs/{jobId}  (polling every 5s)
+        
+Spring Boot Backend (Java 17)
+        ↓
+LichessService          → fetches PGN game history (public API)
+        ↓
+Chesspresso              → parses PGN into per-move FEN positions
+        ↓
+StockfishService         → parallel engine analysis
+  ┌─────────────────────────────────────────────────┐
+  │  BlockingQueue<StockfishEngine> (pool of 2-8)   │
+  │  CompletableFuture.supplyAsync() — all moves    │
+  │  evaluated in parallel across pool              │
+  └─────────────────────────────────────────────────┘
+        ↓
+PatternAnalysisService   → aggregates centipawn loss by phase
+        ↓
+ClaudeService            → generates Chess DNA personality + coaching report
+        ↓
+PostgreSQL               → async job tracking (PENDING→IN_PROGRESS→COMPLETED)
+        ↓
+REST API                 → Spring Boot, async job pattern, CORS config
+
+Deployment:
+  Frontend → Vercel (auto-deploy on git push)
+  Backend  → Render (Docker, auto-deploy on git push)
+  Database → Render PostgreSQL
+```
+
+---
+
+## Chess DNA Report
+
+Every analysis produces a structured personality profile:
+
+```json
+{
+  "personality": {
+    "archetype": "The Middlegame Monster",
+    "tagline": "Creates chaos, forgets to finish",
+    "playStyle": "Tactical, aggressive",
+    "strength": "Explosive combinations in complex positions",
+    "blindSpot": "Converting won endgames",
+    "riskLevel": "High",
+    "similarGM": "Mikhail Tal",
+    "gmDescription": "Like Tal, brilliant in complications but inconsistent in simplified positions"
+  },
+  "report": {
+    "overallAssessment": "...",
+    "biggestStrength": "...",
+    "primaryWeakness": "...",
+    "actionPlan": ["...", "...", "..."],
+    "thisWeekFocus": {
+      "drill": "...",
+      "studyThis": "...",
+      "inYourNextGame": "..."
+    }
+  }
+}
 ```
 
 ---
@@ -30,121 +90,167 @@ REST API                → Spring Boot endpoints, async job pattern
 ## Key Engineering Decisions
 
 ### Stockfish Process Pool
-Stockfish is a native binary — spawning a new process per move would cost ~200ms startup overhead per position. Instead, a `BlockingQueue<StockfishEngine>` pre-warms 4 engine processes at startup and manages them as a pool (borrow → use → return), cutting per-move overhead to near-zero.
+Stockfish is a native binary — spawning a new process per move costs ~200ms startup overhead. Instead, a `BlockingQueue<StockfishEngine>` pre-warms N engine processes at startup and manages them as a pool (borrow → use → return), cutting per-move overhead to near-zero.
 
-### Parallel Move Analysis (CompletableFuture)
-Each position's evaluation is independent of others. Phase 1 evaluates all moves simultaneously using `CompletableFuture.supplyAsync()` across the pool. Phase 2 calculates centipawn differences sequentially — since each loss requires the preceding evaluation. This separation of concerns reduced single-game analysis time from ~85s to ~15s.
+```java
+// Pool initialization (@PostConstruct)
+for (int i = 0; i < POOL_SIZE; i++) {
+    enginePool.offer(new StockfishEngine(stockfishPath));
+}
+
+// Borrow → Use → Return (finally block prevents leaks)
+StockfishEngine engine = enginePool.poll(30, TimeUnit.SECONDS);
+try {
+    return engine.analyze(fen, depth);
+} finally {
+    enginePool.offer(engine); // always returns, even on exception
+}
+```
+
+### Parallel Move Analysis (Two-Phase)
+Each position's evaluation is independent. Phase 1 evaluates all moves simultaneously using `CompletableFuture.supplyAsync()`. Phase 2 calculates centipawn loss sequentially — since each loss requires the preceding evaluation. This separation reduced single-game analysis from ~85s → ~15s.
+
+```java
+// PHASE 1: parallel evaluation (independent)
+List<CompletableFuture<Integer>> futures = fens.stream()
+    .map(fen -> CompletableFuture.supplyAsync(() -> analyzePosition(fen, depth)))
+    .toList();
+List<Integer> evaluations = futures.stream()
+    .map(CompletableFuture::join)
+    .toList();
+
+// PHASE 2: sequential loss calculation (dependent)
+for (int i = 1; i < evaluations.size(); i++) {
+    int loss = evaluations.get(i - 1) - evaluations.get(i);
+    results.add(new AnalyzedMove(fens.get(i), loss));
+}
+```
 
 ### Async Job Pattern
-Full game analysis (5 games ≈ 30 seconds) would block HTTP threads and timeout. The `/analyze-async` endpoint creates a job record, returns the job ID in ~615ms, and offloads processing to a Spring `@Async` background thread. Clients poll `/jobs/{id}` for status.
+Full analysis (5 games ≈ 2-3 minutes) would block HTTP threads. The endpoint creates a job record, returns the job ID in ~615ms, and offloads processing to a Spring `@Async` background thread. Clients poll `/jobs/{id}` every 5 seconds.
 
-### Perspective Normalization
-Stockfish's `score cp` value is always relative to the side-to-move, not a fixed perspective. Without normalization, centipawn loss alternates between large positive and negative values across consecutive moves — making pattern detection meaningless. Solution: flip sign when FEN's turn indicator is `b`, normalizing all evaluations to White's perspective before calculating differences.
+```java
+// Returns immediately (~615ms)
+public AnalysisJob startJob(String username, int gameCount, int depth) {
+    AnalysisJob job = new AnalysisJob(username, gameCount, "PENDING");
+    AnalysisJob saved = jobRepository.save(job);
+    self.processJobAsync(saved.getId(), username, gameCount, depth); // @Async
+    return saved; // client gets this immediately
+}
+```
 
-### Phase Classification
-Phases are determined by board state, not move number (a common but inaccurate shortcut). Rules in priority order:
-1. Total pieces ≤ 12 → **Endgame**
-2. Both queens exchanged → **Endgame** (override — queenless positions are practically endgames regardless of material count)
-3. Move ≤ 15 → **Opening**
-4. Otherwise → **Middlegame**
+**@Async self-invocation fix:** Calling `@Async` methods from the same class bypasses Spring's proxy. Fixed by injecting `self` with `@Lazy` and calling via `self.processJobAsync()`.
+
+### Perspective Normalization Bug Fix
+Stockfish's `score cp` is always relative to the side-to-move. Without normalization, consecutive moves alternate between large positive/negative values — producing fictional 1000+ centipawn blunders.
+
+```java
+private int normalizeToWhitePerspective(int evaluation, String fen) {
+    String turn = fen.split(" ")[1]; // "w" or "b"
+    return turn.equals("b") ? -evaluation : evaluation;
+}
+```
+
+This single fix transformed the output from random noise to coherent player patterns.
+
+### Phase Classification (Board State, Not Move Number)
+Using move number for phase classification is inaccurate — a 40-move game and a 100-move game have completely different structures. Rules in priority order:
+
+```
+1. Total pieces ≤ 12           → ENDGAME
+2. Both queens exchanged        → ENDGAME (override)
+3. Move number ≤ 15            → OPENING
+4. Otherwise                   → MIDDLEGAME
+```
+
+Phase is determined using the **before-move FEN** — matching what the player was actually reasoning about when they made the decision.
+
+### Claude AI Integration
+Phase statistics are sent to Claude with a structured prompt requesting JSON output. The response is parsed and stored in two separate database columns:
+
+```java
+// ClaudeService returns structured JSON
+String claudeJson = callClaude(prompt);
+JsonNode root = objectMapper.readTree(claudeJson);
+
+// Stored separately for clean frontend access
+job.setPersonalityJson(objectMapper.writeValueAsString(root.path("personality")));
+job.setCoachingReport(objectMapper.writeValueAsString(root.path("report")));
+```
 
 ---
 
 ## API Reference
 
-### Start Async Analysis
+### Start Analysis
 ```
-POST /api/games/{username}/analyze-async?gameCount=10
+POST /api/games/{username}/analyze-quick?gameCount=5   → depth 12, faster
+POST /api/games/{username}/analyze-deep?gameCount=5    → depth 18, more accurate
 ```
-Returns immediately with job ID. Analysis runs in background.
+Returns job ID immediately (~615ms).
 
-**Response:**
-```json
-{
-  "id": 7,
-  "username": "DrNykterstein",
-  "gameCount": 5,
-  "status": "PENDING",
-  "createdAt": "2026-07-05T15:40:47"
-}
-```
-
-### Poll Job Status
+### Poll Status
 ```
 GET /api/games/jobs/{jobId}
 ```
-Returns `IN_PROGRESS` while running, or full results when `COMPLETED`.
+Returns `PENDING` → `IN_PROGRESS` → `COMPLETED` with full results.
 
-**Completed response:**
+### Completed Response
 ```json
-[
-  {
-    "phaseName": "opening",
-    "totalMoves": 75,
-    "accuracyPercentage": 96.0,
-    "averageCentipawnLoss": 0.88,
-    "bestCount": 65,
-    "excellentCount": 7,
-    "mistakeCount": 0,
-    "blunderCount": 0
-  },
-  {
-    "phaseName": "middlegame",
-    "totalMoves": 199,
-    "accuracyPercentage": 81.4,
-    "averageCentipawnLoss": -2.89,
-    "blunderCount": 4
-  },
-  {
-    "phaseName": "endgame",
-    "totalMoves": 170,
-    "accuracyPercentage": 77.1,
-    "averageCentipawnLoss": 2.92,
-    "blunderCount": 4
-  }
-]
-```
-
-### Single Position Analysis
-```
-GET /api/games/bestmove?fen={fen}
-```
-Returns Stockfish's best move for any FEN position.
-
-### Raw Game Data
-```
-GET /api/games/{username}?gameCount=10       → raw PGN
-GET /api/games/{username}/fens?gameCount=5   → FEN per move
+{
+  "id": 42,
+  "username": "DrNykterstein",
+  "status": "COMPLETED",
+  "depth": 12,
+  "personalityJson": "{\"archetype\":\"The Opening Maestro\", ...}",
+  "coachingReport": "{\"overallAssessment\":\"...\", ...}",
+  "resultJson": "[{\"phaseName\":\"opening\",\"accuracyPercentage\":96.0,...}]",
+  "createdAt": "2026-07-23T15:49:24",
+  "updatedAt": "2026-07-23T15:49:59"
+}
 ```
 
 ---
 
-## Move Quality Classification
+## Move Quality Buckets
 
-| Classification | Centipawn Loss |
-|---|---|
-| Best | ≤ 10 cp |
-| Excellent | 11–25 cp |
-| Good | 26–50 cp |
-| Inaccuracy | 51–100 cp |
-| Mistake | 101–200 cp |
-| Blunder | > 200 cp |
+| Quality | Centipawn Loss | Meaning |
+|---------|---------------|---------|
+| Best | ≤ 10 cp (incl. negative) | Engine-level move |
+| Excellent | 11–25 cp | Strong move |
+| Good | 26–50 cp | Solid move |
+| Inaccuracy | 51–100 cp | Minor error |
+| Mistake | 101–200 cp | Significant error |
+| Blunder | > 200 cp | Game-changing error |
+
+---
+
+## Performance
+
+| Metric | Value |
+|--------|-------|
+| POST response time | ~615ms (async) |
+| 5 games, depth 12 | ~2 minutes |
+| 5 games, depth 18 | ~4 minutes |
+| Single game (136 moves) | ~15s (was 85s before pool) |
+| Speedup from parallelism | ~5.6x |
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-|---|---|
-| Language | Java 17 |
-| Framework | Spring Boot 3.5 |
-| Build | Gradle |
-| Database | PostgreSQL |
+|-------|-----------|
+| Frontend | React 18, Vite |
+| Backend | Java 17, Spring Boot 3.5, Gradle |
+| Database | PostgreSQL (Render) |
 | ORM | Spring Data JPA / Hibernate |
-| Chess Engine | Stockfish 18 (subprocess, UCI protocol) |
+| Chess Engine | Stockfish (subprocess, UCI protocol) |
 | PGN Parsing | Chesspresso |
-| Async | Spring @Async, CompletableFuture, BlockingQueue |
+| AI Coaching | Anthropic Claude API |
 | Game Data | Lichess Public API |
+| Async | Spring @Async, CompletableFuture, BlockingQueue |
+| Deployment | Vercel (frontend) + Render Docker (backend) |
 
 ---
 
@@ -152,57 +258,72 @@ GET /api/games/{username}/fens?gameCount=5   → FEN per move
 
 ### Prerequisites
 - Java 17+
-- PostgreSQL
-- [Stockfish 18](https://stockfishchess.org/download/) installed locally
+- PostgreSQL running locally
+- [Stockfish](https://stockfishchess.org/download/) installed
+- Node.js 18+ (for frontend)
+- Anthropic API key
 
-### Environment Variables
+### Backend Environment Variables
 ```
-DB_USERNAME=postgres
-DB_PASSWORD=your_password
-STOCKFISH_PATH=C:\path\to\stockfish.exe   # or /usr/games/stockfish on Linux
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/chessdna
+SPRING_DATASOURCE_USERNAME=postgres
+SPRING_DATASOURCE_PASSWORD=your_password
+STOCKFISH_PATH=C:\path\to\stockfish.exe
+CLAUDE_API_KEY=sk-ant-...
+GITHUB_TOKEN=ghp_...
 ```
 
-### Run
+### Run Backend
 ```bash
 ./gradlew bootRun
+# Starts on http://localhost:8080
 ```
 
-App starts on `http://localhost:8080`
+### Run Frontend
+```bash
+cd knightlens-frontend
+npm install
+npm run dev
+# Opens on http://localhost:5173
+```
 
 ---
 
-## Performance
+## Unit Tests (21 passing)
 
-| Metric | Value |
-|---|---|
-| Single game analysis (136 moves) | ~15 seconds |
-| 5 games async end-to-end | ~30 seconds |
-| POST response time (async) | ~615ms |
-| Stockfish pool size | 4 engines |
-| Parallelism model | Per-move within each game |
+```
+StockfishServiceTest (17 tests)
+  ✓ classifyMoveQuality — all 6 buckets + boundary values
+  ✓ determinePhase — endgame conditions, opening/middlegame boundaries
+  ✓ normalizeToWhitePerspective — white/black turn, negative values
+
+PatternAnalysisServiceTest (4 tests)
+  ✓ Empty games → zero stats
+  ✓ Accuracy = (BEST + EXCELLENT) / total × 100
+  ✓ Multiple games → correctly aggregated
+```
 
 ---
 
 ## Real Results
 
-Analysis of **DrNykterstein** (Magnus Carlsen's Lichess account), 5 games:
+Analysis of **DrNykterstein** (Magnus Carlsen's Lichess account), 10 games, depth 12:
 
 ```
-Opening:     96.0% accuracy  (0 blunders)
-Middlegame:  81.4% accuracy  (4 blunders)
-Endgame:     77.1% accuracy  (4 blunders)
-```
+Opening:     93.3% accuracy  (0 blunders, 150 moves)
+Middlegame:  78.6% accuracy  (5 blunders, 378 moves)
+Endgame:     78.5% accuracy  (7 blunders, 311 moves)
 
-Accuracy decreasing from opening → endgame is a coherent, expected pattern — confirming the analysis produces meaningful signal, not noise.
+Chess DNA: "The Opening Maestro Who Loses the Thread"
+Similar to: Ruslan Ponomariov
+```
 
 ---
 
-## What Makes This Different
+## Resume Bullet Points
 
-Most chess analysis tools explain individual moves. This system models the **player** — aggregating patterns across 10–20 games to answer: *where do you consistently lose advantage?*
-
-The architecture separates concerns cleanly:
-- **Stockfish** provides ground-truth numerical evaluation (not guesswork)
-- **Phase classification** uses board state, not move number
-- **Async job pattern** makes deep analysis practical for real users
-- **Process pool** makes Stockfish efficient enough to analyze at scale
+- Designed a chess player weakness detection engine aggregating Stockfish evaluations across 10–20 games to identify recurring patterns across opening, middlegame, and endgame phases; deployed full-stack at knightlens.vercel.app
+- Built a Stockfish process pool (BlockingQueue, N pre-warmed UCI processes) eliminating ~200ms per-position startup overhead; combined with CompletableFuture.supplyAsync() for parallel move evaluation, reducing analysis from 85s → 15s (5.6x speedup)
+- Implemented async job orchestration (@Async, @EnableAsync) with PostgreSQL job tracking — HTTP responses return in ~615ms while Stockfish analysis runs in background; clients poll /jobs/{id} for status
+- Diagnosed and fixed a Stockfish perspective normalization defect causing fictional 1000+ centipawn blunders; developed board-state phase classification and integrated Claude AI to generate structured Chess DNA personality profiles and plain-English coaching reports
+- Built React frontend (Vite) with live job polling, chess piece animations, rotating chess facts during analysis, and instant Lichess username validation; deployed on Vercel with auto-deploy on git push
