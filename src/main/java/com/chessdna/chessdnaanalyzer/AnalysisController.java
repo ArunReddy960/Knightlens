@@ -100,14 +100,14 @@ public class AnalysisController {
     public AnalysisJob quickAnalysis(
             @PathVariable String username,
             @RequestParam(defaultValue = "10") int gameCount) {
-        return analysisJobService.startJob(username, gameCount, 12); // depth hardcoded to 12
+        return analysisJobService.startJob(username, gameCount, 8); // depth hardcoded to 12
     }
 
     @PostMapping("/{username}/analyze-deep")
     public AnalysisJob deepAnalysis(
             @PathVariable String username,
             @RequestParam(defaultValue = "10") int gameCount) {
-        return analysisJobService.startJob(username, gameCount, 18); // depth hardcoded to 18
+        return analysisJobService.startJob(username, gameCount, 12); // depth hardcoded to 18
     }
     @GetMapping("/jobs/recent")
     public ResponseEntity<List<AnalysisJob>> getRecentJobs() {
