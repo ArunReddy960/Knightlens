@@ -15,6 +15,7 @@ public class CorsConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.addAllowedOrigin("http://localhost:5173");
         config.addAllowedOrigin("https://knightlens.vercel.app");
+        config.addAllowedOrigin("https://knightlens.co");
         config.addAllowedOrigin("https://www.knightlens.co");
         config.addAllowedMethod("*");
         config.addAllowedHeader("*");
