@@ -1,5 +1,6 @@
 package com.chessdna.chessdnaanalyzer;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.util.List;
@@ -107,5 +108,11 @@ public class AnalysisController {
             @PathVariable String username,
             @RequestParam(defaultValue = "10") int gameCount) {
         return analysisJobService.startJob(username, gameCount, 18); // depth hardcoded to 18
+    }
+    @GetMapping("/jobs/recent")
+    public ResponseEntity<List<AnalysisJob>> getRecentJobs() {
+        return ResponseEntity.ok(
+                jobRepository.findTop10ByStatusOrderByUpdatedAtDesc("COMPLETED")
+        );
     }
 }
