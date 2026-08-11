@@ -30,9 +30,12 @@ public class StockfishService {
     @PostConstruct
     public void initPool() throws IOException {
         enginePool = new ArrayBlockingQueue<>(POOL_SIZE);
+        System.out.println("=== Starting Stockfish pool with " + POOL_SIZE + " engines ===");
         for (int i = 0; i < POOL_SIZE; i++) {
             enginePool.offer(new StockfishEngine(stockfishPath));
+            System.out.println("=== Engine " + (i + 1) + " of " + POOL_SIZE + " started ===");
         }
+        System.out.println("=== Pool ready: " + enginePool.size() + " engines ===");
     }
 
     @PreDestroy
