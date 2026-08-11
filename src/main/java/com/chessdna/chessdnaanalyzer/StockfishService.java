@@ -8,10 +8,7 @@ import jakarta.annotation.PreDestroy;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 @Service
 public class StockfishService {
@@ -27,19 +24,25 @@ public class StockfishService {
 
     private BlockingQueue<StockfishEngine> enginePool;
 
+    // Custom thread pool — POOL_SIZE * 2 threads ensures engines are never idle
+    private ExecutorService analysisThreadPool;
+
     @PostConstruct
     public void initPool() throws IOException {
         enginePool = new ArrayBlockingQueue<>(POOL_SIZE);
+        analysisThreadPool = Executors.newFixedThreadPool(POOL_SIZE * 2);
         System.out.println("=== Starting Stockfish pool with " + POOL_SIZE + " engines ===");
         for (int i = 0; i < POOL_SIZE; i++) {
             enginePool.offer(new StockfishEngine(stockfishPath));
             System.out.println("=== Engine " + (i + 1) + " of " + POOL_SIZE + " started ===");
         }
         System.out.println("=== Pool ready: " + enginePool.size() + " engines ===");
+        System.out.println("=== Thread pool: " + POOL_SIZE * 2 + " threads ===");
     }
 
     @PreDestroy
     public void shutdownPool() {
+        analysisThreadPool.shutdown();
         for (StockfishEngine engine : enginePool) {
             engine.close();
         }
@@ -59,7 +62,7 @@ public class StockfishService {
 
     public List<AnalyzedMove> analyzeGame(List<String> fens, int depth) throws InterruptedException {
 
-        // ── PHASE 1: Evaluate ALL positions in PARALLEL ──
+        // ── PHASE 1: Evaluate ALL positions in PARALLEL using custom thread pool ──
         List<CompletableFuture<Integer>> futures = new ArrayList<>();
 
         String startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -76,7 +79,7 @@ public class StockfishService {
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
-            });
+            }, analysisThreadPool); // ← CUSTOM THREAD POOL — KEY FIX
             futures.add(future);
         }
 
@@ -125,15 +128,9 @@ public class StockfishService {
         boolean queensGone = !fen.split(" ")[0].contains("Q")
                 && !fen.split(" ")[0].contains("q");
 
-        if (pieceCount <= 12) {
-            return "endgame";
-        }
-        if (queensGone) {
-            return "endgame";
-        }
-        if (moveNumber <= 15) {
-            return "opening";
-        }
+        if (pieceCount <= 12) return "endgame";
+        if (queensGone) return "endgame";
+        if (moveNumber <= 15) return "opening";
         return "middlegame";
     }
 
@@ -149,7 +146,6 @@ public class StockfishService {
     public record AnalysisResult(String bestMove, int evaluationCentipawns) {}
     public record AnalyzedMove(int moveNumber, int centipawnLoss, String phase, String quality) {}
 
-    // ── Inner class: one single Stockfish process ──
     private static class StockfishEngine {
         private final Process process;
         private final BufferedReader reader;

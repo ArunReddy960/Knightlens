@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class AnalysisJobService {
@@ -45,14 +46,12 @@ public class AnalysisJobService {
         job.setStatus("PENDING");
         job.setDepth(depth);
         AnalysisJob savedJob = jobRepository.save(job);
-
         self.processJobAsync(savedJob.getId(), username, gameCount, depth);
-
         return savedJob;
     }
 
     @Async
-    public void processJobAsync(Long jobId, String username, int gameCount,  int depth) {
+    public void processJobAsync(Long jobId, String username, int gameCount, int depth) {
         AnalysisJob job = jobRepository.findById(jobId).orElseThrow();
 
         try {
@@ -62,20 +61,37 @@ public class AnalysisJobService {
             List<List<String>> allGamesFens = ((LichessService) chessPlatformService)
                     .fetchGamesAsFens(username, gameCount);
 
-            List<List<StockfishService.AnalyzedMove>> allGamesAnalysis = new ArrayList<>();
+            // ── Analyze ALL games in PARALLEL ──────────────────────────────
+            // Before: Game 1 → wait → Game 2 → wait → Game 3
+            // After:  Game 1 ┐
+            //         Game 2 ├→ all running simultaneously → join
+            //         Game 3 ┘
+            List<CompletableFuture<List<StockfishService.AnalyzedMove>>> gameFutures =
+                    new ArrayList<>();
+
             for (List<String> gameFens : allGamesFens) {
-                List<StockfishService.AnalyzedMove> analysis = stockfishService.analyzeGame(gameFens, depth);
-                allGamesAnalysis.add(analysis);
+                CompletableFuture<List<StockfishService.AnalyzedMove>> future =
+                        CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return stockfishService.analyzeGame(gameFens, depth);
+                            } catch (Exception e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
+                gameFutures.add(future);
             }
+
+            // Wait for all games to complete
+            List<List<StockfishService.AnalyzedMove>> allGamesAnalysis = gameFutures.stream()
+                    .map(CompletableFuture::join)
+                    .toList();
+            // ───────────────────────────────────────────────────────────────
 
             List<PatternAnalysisService.PhaseStats> patterns =
                     patternAnalysisService.analyzePatterns(allGamesAnalysis);
 
-
-            // ── Claude analysis (personality + coaching report) ──
             String claudeJson = claudeService.generateAnalysis(patterns, username);
 
-// Parse and store personality and report separately
             com.fasterxml.jackson.databind.JsonNode claudeNode =
                     objectMapper.readTree(claudeJson);
 
@@ -95,7 +111,7 @@ public class AnalysisJobService {
         } catch (Exception e) {
             job.setStatus("FAILED");
             jobRepository.save(job);
-            System.err.println("Job " + jobId + " failed with error: " + e.getMessage());
+            System.err.println("Job " + jobId + " failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
